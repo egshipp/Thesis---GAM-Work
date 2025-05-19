@@ -1,0 +1,44 @@
+---
+title: "GAM Work with Simulated PP"
+format: html
+editor: visual
+---
+
+##Simulating Point Process on Unit Square
+
+```{r}
+install.packages("spatstat")
+library(spatstat)
+```
+```{r}
+set.seed(123)
+# Define a spatial window (e.g., unit square)
+win <- owin(c(0, 1), c(0, 1))
+
+# Define covariates: x and y coordinates
+cov_x <- as.im(function(x, y) x, W = win)
+cov_y <- as.im(function(x, y) y, W = win)
+cov_z <- as.im(function(x,y) sin(pi * x), W = win)
+cov_bin <- as.im(function(x, y) ifelse(x + y > 1, 1, 0), W = win)
+
+# Define intensity as a function of covariates (log-linear form)
+lambda_fun <- function(x, y) {
+ exp(4 + 2*x - 3*y)
+}
+
+# Simulate the inhomogeneous Poisson process
+ppp_sim <- rpoispp(lambda = lambda_fun, win = win)
+
+# Plot the result
+plot(ppp_sim, main = "Inhomogeneous Poisson Process with Covariates on Unit Square", xlim = c(0,1), ylim = c(0,1))
+
+df_sim <- as.data.frame(ppp_sim)
+df_sim$cov_x <- cov_x[ppp_sim]
+df_sim$cov_y <- cov_y[ppp_sim]
+df_sim$cov_z <- cov_z[ppp_sim]
+df_sim$cov_bin <- cov_bin[ppp_sim]
+
+df_sim
+
+```
+###
