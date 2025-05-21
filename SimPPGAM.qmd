@@ -3,13 +3,17 @@ title: "GAM Work with Simulated PP"
 format: html
 editor: visual
 ---
-
-##Simulating Point Process on Unit Square
-
+## Installing Packages
 ```{r}
+install.packages("mgcv")
+library(mgcv)
+
 install.packages("spatstat")
 library(spatstat)
 ```
+
+
+##Simulating Point Process on Unit Square
 ```{r}
 set.seed(123)
 # Define a spatial window (e.g., unit square)
@@ -41,4 +45,179 @@ df_sim$cov_bin <- cov_bin[ppp_sim]
 df_sim
 
 ```
-###
+##Data Frame Creation
+```{r}
+# Observed points
+df_sim$pt <- 1
+# df_sim$wt <- 1e-6 (Changing this because it is too small and breaking model)
+df_sim$wt <- quad_spacing^2
+
+# Quadrature Points
+
+quad_spacing <- 0.1
+
+x_seq <- seq(win$xrange[1], win$xrange[2], by = quad_spacing)
+y_seq <- seq(win$yrange[1], win$yrange[2], by = quad_spacing)
+grid_coords <- expand.grid(x = x_seq, y = y_seq)
+
+inside <- spatstat.geom::inside.owin(x = grid_coords$x, y = grid_coords$y, w = win)
+quad_points <- grid_coords[inside, ]
+
+quad_df <- data.frame(
+  x = quad_points$x,
+  y = quad_points$y,
+  pt = 0,
+  wt = as.numeric(1 / nrow(quad_points)) 
+)
+
+# Generate covariates for quad points
+quad_df$cov_x <- cov_x[quad_points]
+quad_df$cov_y <- cov_y[quad_points]
+quad_df$cov_z <- cov_z[quad_points]
+quad_df$cov_bin <- cov_bin[quad_points]
+
+# Merging quad df and observed points
+
+dat = merge(df_sim, quad_df, all=T) # Merging pp and quad for data
+
+```
+## Fitting Models and Comparing K Ratios
+```{r}
+
+m_k20 <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 20,m = 3), data=dat, family=poisson(), weights=wt, method="REML")
+
+ratio_20 <- sum(m_k20$edf) / 20
+
+m_k30 <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 30,m = 3), data=dat, family=poisson(), weights=wt, method="REML")
+
+ratio_30 <- sum(m_k30$edf) / 30
+
+m_k40 <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 40,m = 3), data=dat, family=poisson(), weights=wt, method="REML")
+
+ratio_40 <- sum(m_k40$edf) / 40
+
+print(c(ratio_20, ratio_30, ratio_40))
+
+```
+Using k = 20 because it has the most moderate fitting (least likely to be over or under fit). 
+
+Uses m = 3 for Matern covariance function which may oversmooth the data, unsure if this has a large effect.
+
+## Optimizing Rho
+
+```{r}
+
+dists <- nndist(df_sim)
+range_interval <- range(dists[dists != 0])
+# set up the function to be minimized
+objective_fn = function(rho) {
+  tmp.m = gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 20,m = 3),data=dat,family=poisson(),weights=wt, method="REML")
+  return(tmp.m$gcv.ubre) # the "method" specific criterion
+}
+# find the optimized range parameter
+if (file.exists("pre-calculated_optim.RDATA")) {
+  load("pre-calculated_optim.RDATA")
+} else {
+  opt_time <- system.time(assign("opt", optimize(objective_fn, interval = range_interval)))
+  save(list = c("opt", "opt_time"), file = "pre-calculated_optim.RDATA")
+}
+
+```
+## Fitting LGCP with optimized Rho
+```{r}
+m_opt <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 20,m = c(3, opt$minimum)), data=dat, family=poisson(), weights=wt, method="REML")
+
+```
+## Fitting IPP (no smoother)
+```{r}
+m_ipp <- glm(pt/wt ~ cov_x + cov_y + cov_z + cov_bin , data=dat, family=poisson(), weights=wt)
+```
+
+## Predicting intensity values
+Only for quadrature points though?
+```{r}
+# set the domain data points (in this case the quadrature we used)
+domain.grid <- dat[dat$pt == 0, ]
+
+domain.grid$z_ipp <- predict(m_ipp, newdata=domain.grid, type = "response") # Intensities for IPP
+domain.grid$z_opt <- predict(m_opt, newdata=domain.grid, type = "response") # Intensities for LGCP
+
+```
+
+## Calculate Observed K Functions
+```{r}
+# Create pixel images
+pred_ipp.im <- as.im(domain.grid[,c("x","y","z_ipp")], W = win)
+
+pred_opt.im <-as.im(domain.grid[,c("x","y","z_opt")], W = win)
+
+#turn into a ppp
+df_sim_ppp <- ppp(
+  x = df_sim$x,
+  y = df_sim$y,
+  window = win
+)
+
+K_obs_ipp <- Kinhom(df_sim_ppp, lambda = pred_ipp.im, correction = "border")
+k_obs_opt <- Kinhom(df_sim_ppp, lambda = pred_opt.im, correction = "border")
+
+```
+
+## Simulate the K Function envelopes
+I used the df_sim_ppp which does not include the quadrature points - not sure if that is correct
+```{r}
+K_env_ipp <- envelope(df_sim_ppp, fun = Kinhom, simulate = expression(rpoispp(lambda = pred_ipp.im)))
+K_env_opt <- envelope(df_sim_ppp, fun = Kinhom, simulate = expression(rpoispp(lambda = pred_opt.im)))
+```
+## K Function Plots
+```{r}
+# K FUNCTION PLOTS
+par(mfrow = c(1, 2), mar = c(3.1, 4.1, 2.1, 1.1))  # Side-by-side K function plots
+
+# IPP K Function
+plot(K_env_ipp$r, K_env_ipp$mmean, type = "n",
+     ylim = range(c(K_env_ipp$obs, K_env_ipp$hi, K_env_ipp$lo)),
+     xlab = "Distance (m)", ylab = "K(r)")
+polygon(c(rev(K_env_ipp$r), K_env_ipp$r),
+        c(rev(K_env_ipp$hi), K_env_ipp$lo), col = 'grey80', border = NA)
+lines(K_env_ipp$r, K_env_ipp$mmean, lty = "dashed")
+lines(K_obs_ipp$r, K_obs_ipp$border, col = "red")
+mtext("IPP", side = 3, line = 1, cex = 1)
+
+# LGCP K Function
+plot(K_env_opt$r, K_env_opt$mmean, type = "n",
+     ylim = range(c(K_env_opt$obs, K_env_opt$hi, K_env_opt$lo)),
+     xlab = "Distance (m)", ylab = "")
+polygon(c(rev(K_env_opt$r), K_env_opt$r),
+        c(rev(K_env_opt$hi), K_env_opt$lo), col = 'grey80', border = NA)
+lines(K_env_opt$r, K_env_opt$mmean, lty = "dashed")
+lines(k_obs_opt$r, k_obs_opt$border, col = "red")
+mtext("LGCP", side = 3, line = 1, cex = 1)
+
+legend("topright", legend = c("Observed", "Theoretic", "95% Sim. Bounds"),
+       col = c("red", "black", "grey80"), lty = c("solid", "dashed", "solid"), bty = "n")
+
+
+```
+## Intensity Surface Plots
+```{r}
+
+# INTENSITY SURFACES
+par(mfrow = c(1, 2))  # Side-by-side surface plots
+
+# IPP Surface
+plot((pred_ipp.im), box = FALSE, main = "IPP Surface", col = terrain.colors, ribbon = TRUE)
+points(df_sim[, c("x", "y")], col = rgb(0, 0, 0, alpha = 0.25), pch = 19)
+
+# LGCP Surface
+plot((pred_opt.im), box = FALSE, main = "LGCP Surface", col = terrain.colors, ribbon = TRUE)
+points(df_sim[, c("x", "y")], col = rgb(0, 0, 0, alpha = 0.25), pch = 19)
+
+```
+
+
+
+
+
+
+
