@@ -3,17 +3,20 @@ title: "GAM Work with Simulated PP"
 format: html
 editor: visual
 ---
+
 ## Installing Packages
+
 ```{r}
 install.packages("mgcv")
 library(mgcv)
 
 install.packages("spatstat")
 library(spatstat)
+
 ```
 
-
 ##Simulating Point Process on Unit Square
+
 ```{r}
 set.seed(123)
 # Define a spatial window (e.g., unit square)
@@ -45,12 +48,14 @@ df_sim$cov_bin <- cov_bin[ppp_sim]
 df_sim
 
 ```
+
 ##Data Frame Creation
+
 ```{r}
 # Observed points
 df_sim$pt <- 1
-# df_sim$wt <- 1e-6 (Changing this because it is too small and breaking model)
-df_sim$wt <- quad_spacing^2
+df_sim$wt <- 1e-6 
+# df_sim$wt <- quad_spacing^2
 
 # Quadrature Points
 
@@ -80,11 +85,19 @@ quad_df$cov_bin <- cov_bin[quad_points]
 
 dat = merge(df_sim, quad_df, all=T) # Merging pp and quad for data
 
+# dat = rbind(df_sim, quad_df)
+
 ```
+
 ## Fitting Models and Comparing K Ratios
+
 ```{r}
 
 m_k20 <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 20,m = 3), data=dat, family=poisson(), weights=wt, method="REML")
+
+m_k20 <- gam(pt/wt ~ cov_x + cov_y , data=dat, family=poisson(), weights=wt, method="REML")
+
+m_k20 <- gam(pt/wt ~ cov_x + cov_y + s(x, y, bs = "gp", k = 50), data=dat, family=poisson(), weights=wt, method="REML")
 
 ratio_20 <- sum(m_k20$edf) / 20
 
@@ -99,7 +112,8 @@ ratio_40 <- sum(m_k40$edf) / 40
 print(c(ratio_20, ratio_30, ratio_40))
 
 ```
-Using k = 20 because it has the most moderate fitting (least likely to be over or under fit). 
+
+Using k = 20 because it has the most moderate fitting (least likely to be over or under fit).
 
 Uses m = 3 for Matern covariance function which may oversmooth the data, unsure if this has a large effect.
 
@@ -123,18 +137,24 @@ if (file.exists("pre-calculated_optim.RDATA")) {
 }
 
 ```
+
 ## Fitting LGCP with optimized Rho
+
 ```{r}
 m_opt <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 20,m = c(3, opt$minimum)), data=dat, family=poisson(), weights=wt, method="REML")
 
 ```
+
 ## Fitting IPP (no smoother)
+
 ```{r}
 m_ipp <- glm(pt/wt ~ cov_x + cov_y + cov_z + cov_bin , data=dat, family=poisson(), weights=wt)
 ```
 
 ## Predicting intensity values
+
 Only for quadrature points though?
+
 ```{r}
 # set the domain data points (in this case the quadrature we used)
 domain.grid <- dat[dat$pt == 0, ]
@@ -145,6 +165,7 @@ domain.grid$z_opt <- predict(m_opt, newdata=domain.grid, type = "response") # In
 ```
 
 ## Calculate Observed K Functions
+
 ```{r}
 # Create pixel images
 pred_ipp.im <- as.im(domain.grid[,c("x","y","z_ipp")], W = win)
@@ -164,12 +185,16 @@ k_obs_opt <- Kinhom(df_sim_ppp, lambda = pred_opt.im, correction = "border")
 ```
 
 ## Simulate the K Function envelopes
+
 I used the df_sim_ppp which does not include the quadrature points - not sure if that is correct
+
 ```{r}
 K_env_ipp <- envelope(df_sim_ppp, fun = Kinhom, simulate = expression(rpoispp(lambda = pred_ipp.im)))
 K_env_opt <- envelope(df_sim_ppp, fun = Kinhom, simulate = expression(rpoispp(lambda = pred_opt.im)))
 ```
+
 ## K Function Plots
+
 ```{r}
 # K FUNCTION PLOTS
 par(mfrow = c(1, 2), mar = c(3.1, 4.1, 2.1, 1.1))  # Side-by-side K function plots
@@ -199,7 +224,9 @@ legend("topright", legend = c("Observed", "Theoretic", "95% Sim. Bounds"),
 
 
 ```
+
 ## Intensity Surface Plots
+
 ```{r}
 
 # INTENSITY SURFACES
@@ -215,9 +242,255 @@ points(df_sim[, c("x", "y")], col = rgb(0, 0, 0, alpha = 0.25), pch = 19)
 
 ```
 
+##Notes - Fix original simulated data - Fix grid so that it does not have overhanging grid cells - Make sure betas match up with data for inference - Redo using bei data set
+
+## Fixing original simulated data so it is an LGCP
+
+### Simulating LGCP Point Process on Unit Square
+
+```{r}
+library(spatstat.geom)    
+library(spatstat.random)
+set.seed(321)
+
+# Define a spatial window (unit square)
+win.lgcp <- owin(c(0, 1), c(0, 1))
+
+# Define covariates on the window
+cov_x <- as.im(function(x, y) x, W = win.lgcp)
+cov_y <- as.im(function(x, y) y, W = win.lgcp)
+cov_z <- as.im(function(x, y) sin(pi * x), W = win.lgcp)
+cov_bin <- as.im(function(x, y) ifelse(x + y > 1, 1, 0), W = win.lgcp)
+
+# Define the mean function of the log-Gaussian field (log intensity)
+mu_fun.lgcp <- function(x, y) {
+  4 + 2 * x - 3 * y + sin(pi * x) + ifelse(x + y > 1, 1, 0)# This is the log-mean intensity function
+}
+
+# Convert mean function to an image (pixel-wise values)
+mu_im.lgcp <- as.im(mu_fun.lgcp, W = win.lgcp)
+
+# Simulate LGCP
+#Inhomogeneous LGCP with Gaussian covariance function
+#All models recognise the parameters var for the variance at distance zero, and scale for the scale parameter.
+ppp_lgcp <- rLGCP("gauss", mu = mu_im.lgcp, var = 1, scale = 0.05, win = win.lgcp)
+
+# Understand parameters for LGCP
+
+# Plot the simulated LGCP
+plot(ppp_lgcp, main = "LGCP on Unit Square")
+
+# Create data frame with covariate values at point locations
+df_lgcp <- as.data.frame(ppp_lgcp)
+df_lgcp$cov_x <- cov_x[ppp_lgcp]
+df_lgcp$cov_y <- cov_y[ppp_lgcp]
+df_lgcp$cov_z <- cov_z[ppp_lgcp]
+df_lgcp$cov_bin <- cov_bin[ppp_lgcp]
+
+df_lgcp
+```
+
+### Data frame creation using LGCP
+
+```{r}
+# Observed points
+df_lgcp$pt <- 1
+df_lgcp$wt <- 1e-6 
+# df_sim$wt <- quad_spacing^2
+
+# Quadrature Points
+
+quad_spacing <- 0.1
+
+x_seq.lgcp <- seq(win.lgcp$xrange[1] + quad_spacing/2, win.lgcp$xrange[2] - quad_spacing/2, by = quad_spacing)
+y_seq.lgcp <- seq(win.lgcp$yrange[1] + quad_spacing/2, win.lgcp$yrange[2] - quad_spacing/2, by = quad_spacing)
+grid_coords.lgcp <- expand.grid(x = x_seq.lgcp, y = y_seq.lgcp)
+
+quad_points.lgcp <- grid_coords.lgcp
+
+df_quad.lgcp <- data.frame(
+  x = quad_points.lgcp$x,
+  y = quad_points.lgcp$y,
+  pt = 0,
+  wt = quad_spacing^2 # correct weight: area of each grid cell
+)
+
+# Generate covariates
+df_quad.lgcp$cov_x <- cov_x[quad_points.lgcp]
+df_quad.lgcp$cov_y <- cov_y[quad_points.lgcp]
+df_quad.lgcp$cov_z <- cov_z[quad_points.lgcp]
+df_quad.lgcp$cov_bin <- cov_bin[quad_points.lgcp]
+
+# Combine observed and quadrature points
+dat.lgcp <- rbind(df_lgcp, df_quad.lgcp)
+
+dat.lgcp
+```
+
+### Fitting Models and Comparing K Ratios
+
+```{r}
+
+m_k20.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 20,m = 3), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
+
+ratio_20.lgcp <- sum(m_k20.lgcp$edf) / 20
+
+m_k30.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 30,m = 3), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
+
+ratio_30.lgcp <- sum(m_k30.lgcp$edf) / 30
+
+m_k40.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 40,m = 3), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
+
+ratio_40.lgcp <- sum(m_k40.lgcp$edf) / 40
 
 
+m_k100.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 100,m = 3), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
 
 
+m_k200.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 200,m = 3), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
 
 
+m_k400.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 300,m = 3), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
+
+
+ratio_100.lgcp <- sum(m_k100.lgcp$edf) / 100
+
+ratio_200.lgcp <- sum(m_k200.lgcp$edf) / 200
+
+ratio_400.lgcp <- sum(m_k400.lgcp$edf) / 400
+
+print(c(ratio_20.lgcp, ratio_30.lgcp, ratio_40.lgcp, ratio_100.lgcp, ratio_200.lgcp, ratio_400.lgcp))
+
+
+```
+
+```{r}
+
+par(mfrow = c(2, 3))  # Layout for 6 plots
+
+vis.gam(m_k20.lgcp, view = c("x", "y"), plot.type = "contour", main = "k = 20")
+vis.gam(m_k30.lgcp, view = c("x", "y"), plot.type = "contour", main = "k = 30")
+vis.gam(m_k40.lgcp, view = c("x", "y"), plot.type = "contour", main = "k = 40")
+vis.gam(m_k100.lgcp, view = c("x", "y"), plot.type = "contour", main = "k = 100")
+vis.gam(m_k200.lgcp, view = c("x", "y"), plot.type = "contour", main = "k = 200")
+vis.gam(m_k400.lgcp, view = c("x", "y"), plot.type = "contour", main = "k = 400")
+```
+
+### Optimizing Rho
+
+```{r}
+
+dists.lgcp <- nndist(df_lgcp)
+range_interval.lgcp <- range(dists.lgcp[dists.lgcp != 0])
+# set up the function to be minimized
+objective_fn = function(rho) {
+  tmp.m = gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 30,m = 3),data=dat.lgcp,family=poisson(),weights=wt, method="REML")
+  return(tmp.m$gcv.ubre) # the "method" specific criterion
+}
+# find the optimized range parameter
+if (file.exists("pre-calculated_optim.RDATA")) {
+  load("pre-calculated_optim.RDATA")
+} else {
+  opt_time <- system.time(assign("opt", optimize(objective_fn, interval = range_interval.lgcp)))
+  save(list = c("opt", "opt_time"), file = "pre-calculated_optim.RDATA")
+}
+```
+
+### Fitting LGCP with optimized rho
+
+```{r}
+m_opt.lgcp <- gam(pt/wt ~ cov_x + cov_y + cov_z + cov_bin + s(x, y, bs = "gp", k = 30,m = c(3, opt$minimum)), data=dat.lgcp, family=poisson(), weights=wt, method="REML")
+```
+
+### Fitting IPP
+
+```{r}
+m_ipp.lgcp <- glm(pt/wt ~ cov_x + cov_y + cov_z + cov_bin , data=dat.lgcp, family=poisson(), weights=wt)
+```
+
+### Predicting Intensity Values
+
+```{r}
+domain.grid.lgcp <- dat.lgcp[dat.lgcp$pt == 0, ]
+
+domain.grid.lgcp$z_ipp <- predict(m_ipp.lgcp, newdata=domain.grid.lgcp, type = "response") # Intensities for IPP
+domain.grid.lgcp$z_opt <- predict(m_opt.lgcp, newdata=domain.grid.lgcp, type = "response") # Intensities for LGCP
+```
+
+### Calculate Observed K Function
+
+```{r}
+
+# Create pixel images
+pred_ipp.im.lgcp <- as.im(domain.grid.lgcp[,c("x","y","z_ipp")], W = win.lgcp)
+
+pred_opt.im.lgcp <-as.im(domain.grid.lgcp[,c("x","y","z_opt")], W = win.lgcp)
+
+#turn into a ppp
+df_lgcp_ppp <- ppp(
+  x = df_lgcp$x,
+  y = df_lgcp$y,
+  window = win.lgcp
+)
+
+K_obs_ipp.lgcp <- Kinhom(df_lgcp_ppp, lambda = pred_ipp.im.lgcp, correction = "border")
+k_obs_opt.lgcp <- Kinhom(df_lgcp_ppp, lambda = pred_opt.im.lgcp, correction = "border")
+
+```
+
+### Simulate K Function Envelopes
+
+```{r}
+K_env_ipp.lgcp <- envelope(df_lgcp_ppp, fun = Kinhom, simulate = expression(rpoispp(lambda = pred_ipp.im.lgcp)))
+
+K_env_opt.lgcp <- envelope(df_lgcp_ppp, fun = Kinhom, simulate = expression(rpoispp(lambda = pred_opt.im.lgcp)))
+```
+
+### K Function Plots
+
+```{r}
+# K FUNCTION PLOTS
+par(mfrow = c(1, 2), mar = c(3.1, 4.1, 2.1, 1.1))  # Side-by-side K function plots
+
+# IPP K Function
+plot(K_env_ipp.lgcp$r, K_env_ipp.lgcp$mmean, type = "n",
+     ylim = range(c(K_env_ipp.lgcp$obs, K_env_ipp.lgcp$hi, K_env_ipp.lgcp$lo)),
+     xlab = "Distance (m)", ylab = "K(r)")
+polygon(c(rev(K_env_ipp.lgcp$r), K_env_ipp.lgcp$r),
+        c(rev(K_env_ipp.lgcp$hi), K_env_ipp.lgcp$lo), col = 'grey80', border = NA)
+lines(K_env_ipp.lgcp$r, K_env_ipp.lgcp$mmean, lty = "dashed")
+lines(K_obs_ipp.lgcp$r, K_obs_ipp.lgcp$border, col = "red")
+mtext("IPP", side = 3, line = 1, cex = 1)
+
+# LGCP K Function
+plot(K_env_opt.lgcp$r, K_env_opt.lgcp$mmean, type = "n",
+     ylim = range(c(K_env_opt.lgcp$obs, K_env_opt.lgcp$hi, K_env_opt.lgcp$lo)),
+     xlab = "Distance (m)", ylab = "")
+polygon(c(rev(K_env_opt.lgcp$r), K_env_opt.lgcp$r),
+        c(rev(K_env_opt.lgcp$hi), K_env_opt.lgcp$lo), col = 'grey80', border = NA)
+lines(K_env_opt.lgcp$r, K_env_opt.lgcp$mmean, lty = "dashed")
+lines(k_obs_opt.lgcp$r, k_obs_opt.lgcp$border, col = "red")
+mtext("LGCP", side = 3, line = 1, cex = 1)
+
+legend("topright", legend = c("Observed", "Theoretic", "95% Sim. Bounds"),
+       col = c("red", "black", "grey80"), lty = c("solid", "dashed", "solid"), bty = "n")
+
+```
+
+### Intensity Surface Plots
+
+```{r}
+
+
+# INTENSITY SURFACES
+par(mfrow = c(1, 2))  # Side-by-side surface plots
+
+# IPP Surface
+plot((pred_ipp.im.lgcp), box = FALSE, main = "IPP Surface", col = terrain.colors, ribbon = TRUE)
+points(df_lgcp[, c("x", "y")], col = rgb(0, 0, 0, alpha = 0.25), pch = 19)
+
+# LGCP Surface
+plot((pred_opt.im.lgcp), box = FALSE, main = "LGCP Surface", col = terrain.colors, ribbon = TRUE)
+points(df_lgcp[, c("x", "y")], col = rgb(0, 0, 0, alpha = 0.25), pch = 19)
+
+```

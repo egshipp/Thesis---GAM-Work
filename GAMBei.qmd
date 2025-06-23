@@ -1,0 +1,89 @@
+---
+title: "GAM FItting for Bei"
+format: pdf
+editor: visual
+---
+## Installing packages
+```{r}
+if(!require(mgcv, quietly = T)){
+  install.packages("mgcv")
+  library(mgcv)
+}
+if(!require(spatstat, quietly = T)){
+  install.packages("spatstat")
+  library(spatstat)
+}
+```
+
+## Data Frame Creation
+```{r}
+data(bei, package = "spatstat.data")
+
+pp_bei = data.frame(bei,
+                lapply(bei.extra,function(x){x[bei]}),pt=1,wt=1e-6)
+
+q_xy_bei = data.frame(bei.extra[[1]])[,c("x","y")]
+
+quad_bei = data.frame(q_xy_bei,lapply(bei.extra,function(x){x[q_xy_bei]}), # Data frame of all quadrature points (unobserved) (pt=0)
+                  pt=0,wt=area(bei$window)/nrow(q_xy_bei))
+
+
+dat_bei = merge(pp_bei, quad_bei, all=T) # Merging pp and quad for data
+
+dat_bei
+```
+## Fitting Models and Comparing K Ratios
+```{r}
+m_k100.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 100, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+ratio_100.bei <- sum(m_k100.bei$edf) / 100
+
+m_k200.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 200, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+ratio_200.bei <- sum(m_k200.bei$edf) / 200
+
+m_k300.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 300, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+ratio_300.bei <- sum(m_k300.bei$edf) / 300
+
+m_k500.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 500, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+ratio_500.bei <- sum(m_k500.bei$edf) / 500
+
+m_k700.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 700, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+ratio_700.bei <- sum(m_k700.bei$edf) / 700
+
+m_k1000.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 1000, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+ratio_1000.bei <- sum(m_k1000.bei$edf) / 1000
+
+print(c(ratio_100.bei, ratio_200.bei, ratio_300.bei, ratio_500.bei, ratio_700.bei, ratio_1000.bei))
+
+```
+## Optimizing Rho
+```{r}
+
+dists <- nndist(bei)
+range_interval <- range(dists[dists != 0])
+# set up the function to be minimized
+objective_fn = function(rho) {
+  tmp.m = gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 1000, m = 3), data=dat_bei, family=poisson(), weights=wt, method="REML")
+  return(tmp.m$gcv.ubre) # the "method" specific criterion
+}
+# find the optimized range parameter
+if (file.exists("pre-calculated_optim.RDATA")) {
+  load("pre-calculated_optim.RDATA")
+} else {
+  opt_time <- system.time(assign("opt", optimize(objective_fn, interval = range_interval)))
+  save(list = c("opt", "opt_time"), file = "pre-calculated_optim.RDATA")
+}
+```
+
+## Fitting LGCP with optimized Rho
+```{r}
+
+m_opt.bei <- gam(pt/wt ~ elev + grad + s(x, y, bs = "gp", k = 1000, m = c(3, opt$minimum)), data=dat_bei, family=poisson(), weights=wt, method="REML")
+
+```
+

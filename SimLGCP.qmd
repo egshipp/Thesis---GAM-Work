@@ -1,0 +1,343 @@
+---
+title: "SimLGCP"
+format: pdf
+editor: visual
+---
+
+## Package Installation
+
+```{r}
+library(mgcv)
+
+library(spatstat)
+```
+
+## Simulating LGCP Data Using SpatStat
+
+### Define the spatial window
+
+Using unit square for this example
+
+```{r}
+win <- owin(xrange = c(0,1), yrange = c(0,1))
+```
+
+### Define Covariate Functions
+
+```{r}
+cov_x <- as.im(function(x,y) x, W = win)
+cov_y <- as.im(function(x,y) y, W = win)
+cov_z <- as.im(function(x,y) x+y+2, W = win)
+cov_a <- as.im(function(x,y) 2*x, W = win)
+```
+
+### Define Mean Function Based on Covariates
+
+```{r}
+mean <- function(x,y)
+  {2*x + x + y + 2}
+
+mean.im <- as.im(mean, W = win)
+```
+
+### Simulate LGCP using rLGCP()
+
+#### Exponential
+
+```{r}
+set.seed(111)
+ppp_exp <- rLGCP("exponential", mu = mean.im, var = 1, scale = 0.05, win = win)
+
+#Change var
+ppp_exp_var1 <- rLGCP("exponential", mu = mean.im, var = 2, scale = 0.05, win = win)
+
+ppp_exp_var2 <- rLGCP("exponential", mu = mean.im, var = 0.5, scale = 0.05, win = win)
+
+# Change scale
+ppp_exp_scale1 <- rLGCP("exponential", mu = mean.im, var = 1, scale = 0.09, win = win)
+# if scale goes above 1, becomes similar to small scale
+
+ppp_exp_scale2 <- rLGCP("exponential", mu = mean.im, var = 1, scale = 0.001, win = win)
+
+par(mfrow = c(2, 3), mar = c(2, 2, 2, 1)) 
+
+plot(ppp_exp, main = "Default: var=1, scale=0.05", pch = 16, cex = 0.5)
+plot(ppp_exp_var1, main = "Var = 2", pch = 16, cex = 0.5)
+plot(ppp_exp_var2, main = "Var = 0.5", pch = 16, cex = 0.5)
+plot(ppp_exp_scale1, main = "Scale = 0.09", pch = 16, cex = 0.5)
+plot(ppp_exp_scale2, main = "Scale = 0.001", pch = 16, cex = 0.5)
+
+
+```
+
+#### Gauss
+
+```{r}
+set.seed(112)
+ppp_gauss <- rLGCP("gauss", mu = mean.im, var = 1, scale = 0.05, win = win)
+
+#Change var
+ppp_gauss_var1 <- rLGCP("gauss", mu = mean.im, var = 2, scale = 0.05, win = win)
+
+ppp_gauss_var2 <- rLGCP("gauss", mu = mean.im, var = 0.5, scale = 0.05, win = win)
+
+# Change scale
+ppp_gauss_scale1 <- rLGCP("gauss", mu = mean.im, var = 1, scale = 0.09, win = win)
+# if scale goes above 1, becomes similar to small scale
+
+ppp_gauss_scale2 <- rLGCP("gauss", mu = mean.im, var = 1, scale = 0.001, win = win)
+
+par(mfrow = c(2, 3), mar = c(2, 2, 2, 1))  
+plot(ppp_gauss, main = "Default: var=1, scale=0.05", pch = 16, cex = 0.5)
+plot(ppp_gauss_var1, main = "Var = 2", pch = 16, cex = 0.5)
+plot(ppp_gauss_var2, main = "Var = 0.5", pch = 16, cex = 0.5)
+plot(ppp_gauss_scale1, main = "Scale = 0.09", pch = 16, cex = 0.5)
+plot(ppp_gauss_scale2, main = "Scale = 0.001", pch = 16, cex = 0.5)
+```
+
+#### Stable
+
+```{r}
+set.seed(113)
+
+ppp_stable <- rLGCP("stable", mu = mean.im, var = 1, scale = 0.05, alpha = 0.5, win = win)
+
+#Change var
+ppp_stable_var1 <- rLGCP("stable", mu = mean.im, var = 2, scale = 0.05,alpha = 0.5, win = win)
+
+ppp_stable_var2 <- rLGCP("stable", mu = mean.im, var = 0.5, scale = 0.05, alpha = 0.5,win = win)
+
+# Change scale
+ppp_stable_scale1 <- rLGCP("stable", mu = mean.im, var = 1, scale = 5, alpha = 0.5,win = win)
+
+ppp_stable_scale2 <- rLGCP("stable", mu = mean.im, var = 1, scale = 0.001, alpha = 0.5,win = win)
+
+# Change alpha
+ppp_stable_alpha1 <- rLGCP("stable", mu = mean.im, var = 1, scale = 0.001, alpha = 5,win = win)
+
+ppp_stable_alpha2 <- rLGCP("stable", mu = mean.im, var = 1, scale = 0.001, alpha = 0.01,win = win)
+
+par(mfrow = c(3, 3), mar = c(2, 2, 2, 1)) 
+
+plot(ppp_stable, main = "Default: var=1, scale=0.05, α=0.5", pch = 16, cex = 0.5)
+plot(ppp_stable_var1, main = "Var = 2", pch = 16, cex = 0.5)
+plot(ppp_stable_var2, main = "Var = 0.5", pch = 16, cex = 0.5)
+plot(ppp_stable_scale1, main = "Scale = 5", pch = 16, cex = 0.5)
+plot(ppp_stable_scale2, main = "Scale = 0.001", pch = 16, cex = 0.5)
+plot(ppp_stable_alpha1, main = "Alpha = 5", pch = 16, cex = 0.5)
+plot(ppp_stable_alpha2, main = "Alpha = 0.01", pch = 16, cex = 0.5)
+
+
+```
+
+#### Generalised Cauchy
+
+```{r}
+set.seed(114)
+
+ppp_gencauchy <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 0.05, alpha = 1, beta = 1, win = win)
+
+#Change var
+ppp_gencauchy_var1 <- rLGCP("gencauchy", mu = mean.im, var = 2, scale = 0.05, alpha = 1, beta = 1, win = win)
+
+ppp_gencauchy_var2 <- rLGCP("gencauchy", mu = mean.im, var = 0.5, scale = 0.05, alpha = 1, beta = 1, win = win)
+
+#Change scale
+ppp_gencauchy_scale1 <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 5, alpha = 1, beta = 1, win = win)
+
+ppp_gencauchy_scale2 <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 0.001, alpha = 1, beta = 1, win = win)
+
+#Change alpha
+ppp_gencauchy_alpha1 <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 0.05, alpha = 5, beta = 1, win = win)
+
+ppp_gencauchy_alpha2 <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 0.05, alpha = 0.01, beta = 1, win = win)
+
+#Change beta
+ppp_gencauchy_beta1 <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 0.05, alpha = 1, beta = 5, win = win)
+
+ppp_gencauchy_beta2 <- rLGCP("gencauchy", mu = mean.im, var = 1, scale = 0.05, alpha = 1, beta = 0.01, win = win)
+
+par(mfrow = c(3, 3), mar = c(2, 2, 2, 1))
+
+plot(ppp_gencauchy, main = "Default: var=1, scale=0.05", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_var1, main = "Var = 2", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_var2, main = "Var = 0.5", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_scale1, main = "Scale = 5", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_scale2, main = "Scale = 0.001", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_alpha1, main = "Alpha = 5", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_alpha2, main = "Alpha = 0.01", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_beta1, main = "Beta = 5", pch = 16, cex = 0.5)
+plot(ppp_gencauchy_beta2, main = "Beta = 0.01", pch = 16, cex = 0.5)
+
+```
+
+#### Matern
+
+```{r}
+set.seed(115)
+
+ppp_matern <- rLGCP("matern", mu = mean.im, var = 1, scale = 0.5, nu = 0.05, win = win)
+
+#Change var
+ppp_matern_var1 <- rLGCP("matern", mu = mean.im, var = 2, scale = 0.5, nu = 0.05, win = win)
+
+ppp_matern_var2 <- rLGCP("matern", mu = mean.im, var = 0.5, scale = 0.5, nu = 0.05, win = win)
+
+#Change scale
+ppp_matern_scale1 <- rLGCP("matern", mu = mean.im, var = 1, scale = 5, nu = 0.05, win = win)
+
+ppp_matern_scale2 <- rLGCP("matern", mu = mean.im, var = 1, scale = 0.001, nu = 0.05, win = win)
+
+#Change nu
+ppp_matern_nu1 <- rLGCP("matern", mu = mean.im, var = 1, scale = 0.5, nu = 5, win = win)
+
+ppp_matern_nu2 <- rLGCP("matern", mu = mean.im, var = 1, scale = 0.5, nu = 0.001, win = win)
+
+par(mfrow = c(3, 3), mar = c(2, 2, 2, 1)) 
+
+
+plot(ppp_matern, main = "Default: var=1, scale=0.5, nu=0.05", pch = 16, cex = 0.5)
+plot(ppp_matern_var1, main = "Var = 2", pch = 16, cex = 0.5)
+plot(ppp_matern_var2, main = "Var = 0.5", pch = 16, cex = 0.5)
+plot(ppp_matern_scale1, main = "Scale = 5", pch = 16, cex = 0.5)
+plot(ppp_matern_scale2, main = "Scale = 0.001", pch = 16, cex = 0.5)
+plot(ppp_matern_nu1, main = "Nu = 5", pch = 16, cex = 0.5)
+plot(ppp_matern_nu2, main = "Nu = 0.001", pch = 16, cex = 0.5)
+```
+
+### Simulate Covariate Values Using Defined Functions for Observed Points
+
+Using Gaussian model for rest of fitting (but can use any)
+
+```{r}
+lgcp_df_gauss <- as.data.frame(ppp_gauss)
+
+lgcp_df_gauss$cov_x <- cov_x[lgcp_df_gauss]
+lgcp_df_gauss$cov_y <- cov_y[lgcp_df_gauss]
+lgcp_df_gauss$cov_z <- cov_z[lgcp_df_gauss]
+lgcp_df_gauss$cov_a <- cov_a[lgcp_df_gauss]
+
+# Adding pt and wt for the "observed points"
+lgcp_df_gauss$pt <- 1
+lgcp_df_gauss$wt <- 1e-6
+```
+
+### Create Grid in Window for Quadrature Points
+
+```{r}
+# mask <- as.mask(win, eps = 0.01)
+
+# dummy_points <- gridcentres(mask)
+
+quad_points <- quadscheme(ppp_gauss, method = "grid")
+
+plot(quad_points$data)
+plot(quad_points$dummy)
+```
+
+### Create Quadrature Data Frame
+
+```{r}
+
+quad_df_gauss <- data.frame(
+  x = quad_points$dummy$x, 
+  y = quad_points$dummy$y,
+  pt = 0,
+  wt = 6.94e-05 # came from areas vector in quad_points list
+)
+
+```
+
+### Generate Quadrature Covariates
+
+```{r}
+quad_df_gauss$cov_x <- cov_x[quad_df_gauss]
+quad_df_gauss$cov_y <- cov_y[quad_df_gauss]
+quad_df_gauss$cov_z <- cov_z[quad_df_gauss]
+quad_df_gauss$cov_a <- cov_a[quad_df_gauss]
+```
+
+### Use rbind() to Merge Observed and Quadrature Points Together
+
+```{r}
+data_gauss <- rbind(lgcp_df_gauss, quad_df_gauss)
+
+data_gauss
+```
+## K Ratio Comparisons
+From GAM paper - "Wood(2017, sec. 5.9) suggests that k should be large relative to the empirical degrees of freedom, computed as the trace of the influence matrix of the fitted model, and so we chose k in our applications such that it was at least four times larger than the empirical degrees of freedom (see supplementary material Section S1.3 for further on this)."
+
+### Create function to look at different basis function amounts
+```{r}
+basis_func <- function(data, k, m = "3", 
+                       response = "pt", 
+                       covariates = c("cov_x", "cov_y", "cov_z"),
+                       family = "poisson()",
+                       weight = "wt",
+                       method = "REML",
+                       bs = "gp"){
+  
+  linear <- paste0(covariates, collapse = "+")
+  
+  smoothing <- paste0("s(x, y, bs = '", bs, "', k = ", k, ", m = ", m, ")")
+  
+  # Combining both sides
+  
+  rhs <- paste0(linear, "+", smoothing)
+  formula_str <- paste0(response, " / ", weight, " ~ ", rhs)
+  
+  
+  # Convert to formula
+  model_formula <- as.formula(formula_str)
+  
+  # Fit the GAM model
+  gam_model <- gam(model_formula,
+      data = data,
+      family = poisson(),
+      weights = data[[weight]],
+      method = "REML")
+  
+  # K ratio
+  
+  k_ratio <- sum(gam_model$edf) / k
+  
+  result <- list("Model" = gam_model, "K Ratio" = k_ratio)
+  
+  return(result)
+  
+}
+
+```
+
+### Comparing k-ratios 
+```{r}
+
+basis_func(data = data_gauss, k = 30)
+
+basis_func(data = data_gauss, k = 40)
+
+basis_func(data = data_gauss, k = 50)
+
+basis_func(data = data_gauss, k = 60)
+
+basis_func(data = data_gauss, k = 70)
+
+
+```
+k = 70 seems like the best as it has a k ratio of 0.24 which reaches the threshold of 1/4 the edf of the model
+
+## Optimizing rho (range parameter, m)
+
+Found out they provide a wrapper function for optimizing called "gam_lgcp.R"
+
+```{r}
+source("gam_lgcp.R")
+
+m_k70 <- basis_func(data = data_gauss, k = 70)
+
+gam_lgcp(m_k70, data = data_gauss, weights = wt)
+```
+
+
+
+
